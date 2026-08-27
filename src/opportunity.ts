@@ -18,6 +18,25 @@ const SCAN_SIZES: { label: string; amountIn: bigint }[] = [
   { label: "1 WETH", amountIn: 1_000000000000000000n },
 ];
 
+/** Reject any "opportunity" whose net profit exceeds this multiple of the
+ *  amount borrowed. Real cross-DEX spreads on liquid pairs are a few
+ *  percent at most; anything claiming returns beyond this bound is far
+ *  more likely to indicate bad/stale quote data, a manipulated or
+ *  extremely illiquid pool, or an RPC/data error than a genuine
+ *  opportunity. This is a defense-in-depth sanity filter, not a precise
+ *  economic model — it exists to catch obviously pathological data before
+ *  the bot ever considers acting on it. */
+const MAX_PLAUSIBLE_PROFIT_MULTIPLE = 10n;
+
+/**
+ * dexBuy/dexBuyName: the DEX used for the "buy" leg in the Solidity
+ * contract's naming (ArbitrageParams.dexBuy) — this swaps tokenIn (WETH)
+ * for tokenOut (USDC). Equivalently, from a WETH holder's perspective,
+ * this is "selling WETH" on that DEX. Both descriptions refer to the same
+ * operation; bot.ts's logging uses the "sell WETH" phrasing intentionally
+ * for readability, while this module keeps the contract's dexBuy/dexSell
+ * naming to match ArbitrageParams exactly.
+ */
 export interface Opportunity {
   amountIn: bigint;
   sizeLabel: string;
@@ -60,10 +79,10 @@ async function simulateRoundTrip(
 
 /**
  * Scans all configured sizes across both DEX-direction combinations and
- * returns the single most profitable opportunity found, or null if nothing
- * is profitable net of the Aave premium (gas is NOT accounted for here —
- * that's the caller's responsibility, since gas cost depends on current
- * network conditions at execution time, not detection time).
+ * returns the single most profitable *plausible* opportunity found, or
+ * null if nothing plausible and profitable exists. Gas is NOT accounted
+ * for here — that's the caller's responsibility, since gas cost depends on
+ * current network conditions at execution time, not detection time.
  *
  * quoteFn defaults to the real on-chain getQuote, but can be overridden
  * (e.g. in tests) to verify the selection/sizing logic in isolation from
@@ -79,7 +98,18 @@ export async function findBestOpportunity(quoteFn: QuoteFn = liveGetQuote): Prom
     ] as const) {
       const { grossReturn, netProfit } = await simulateRoundTrip(size.amountIn, buyDex, sellDex, quoteFn);
 
-      if (netProfit > 0n && (best === null || netProfit > best.netProfit)) {
+      if (netProfit <= 0n) {
+        continue;
+      }
+
+      if (netProfit > size.amountIn * MAX_PLAUSIBLE_PROFIT_MULTIPLE) {
+        // Deliberately not logged here — opportunity.ts stays free of I/O
+        // side effects; callers (e.g. bot.ts) can log rejected-as-implausible
+        // cases themselves if desired. This just refuses to surface it.
+        continue;
+      }
+
+      if (best === null || netProfit > best.netProfit) {
         best = {
           amountIn: size.amountIn,
           sizeLabel: size.label,

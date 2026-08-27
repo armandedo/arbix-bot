@@ -24,8 +24,30 @@ const ESTIMATED_GAS_UNITS = 600_000n;
  *  detection and confirmation, and against our gas estimate being off. */
 const PROFIT_TO_GAS_SAFETY_MULTIPLE = 2n;
 
+/** All our on-chain addresses (Aave, SushiSwap, Camelot, Arbix contracts)
+ *  are Arbitrum One mainnet addresses — see config.ts. The bot must only
+ *  ever run against a node claiming to BE chain 42161, whether that's real
+ *  mainnet or a local fork of it. This guards against ever accidentally
+ *  pointing RPC_URL at a different network while these addresses are still
+ *  configured, which would either fail confusingly or, worse, silently
+ *  interact with unrelated contracts that happen to exist at those
+ *  addresses on the wrong chain. */
+const EXPECTED_CHAIN_ID = 42161;
+
 function log(message: string) {
   console.log(`[${new Date().toISOString()}] ${message}`);
+}
+
+async function assertCorrectChain() {
+  const actualChainId = await publicClient.getChainId();
+  if (actualChainId !== EXPECTED_CHAIN_ID) {
+    throw new Error(
+      `Chain ID mismatch: expected ${EXPECTED_CHAIN_ID} (Arbitrum One or a fork of it), ` +
+        `but RPC ${config.rpcUrl} reports chain ID ${actualChainId}. Refusing to start — ` +
+        `all configured contract addresses assume Arbitrum One.`
+    );
+  }
+  log(`Chain ID verified: ${actualChainId} matches expected ${EXPECTED_CHAIN_ID}.`);
 }
 
 async function runCycle(signer: ReturnType<typeof createLocalSigner>) {
@@ -70,6 +92,8 @@ async function main() {
   log(`Bot address: ${config.botAddress}`);
   log(`RPC: ${config.rpcUrl}`);
   log(`Poll interval: ${POLL_INTERVAL_MS}ms`);
+
+  await assertCorrectChain();
 
   const signer = createLocalSigner(config.botPrivateKey, config.rpcUrl);
 
