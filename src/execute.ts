@@ -26,6 +26,15 @@ const flashLoanAbi = [
 
 const DEADLINE_BUFFER_SECONDS = 300n;
 
+/** Explicit gas limit for requestFlashLoan, deliberately generous above
+ *  observed real gas usage (ArbixExecutor.executeArbitrage alone averages
+ *  ~230k gas per forge --gas-report, plus flash loan overhead and two
+ *  external adapter swap calls). Set explicitly to skip eth_estimateGas
+ *  entirely — this RPC call has proven unreliable against our Anvil fork's
+ *  lazy state-fetching from the public Arbitrum RPC, and in production a
+ *  competitive bot benefits from skipping the estimation round-trip anyway. */
+const EXECUTION_GAS_LIMIT = 1_000_000n;
+
 function routerToAdapter(routerAddress: `0x${string}`): `0x${string}` {
   if (routerAddress.toLowerCase() === addresses.sushiRouter.toLowerCase()) {
     return arbix.sushiAdapter;
@@ -84,6 +93,7 @@ export async function executeOpportunity(
     chain: signer.walletClient.chain,
     to: arbix.flashLoan,
     data: calldata,
+    gas: EXECUTION_GAS_LIMIT,
   });
 
   await publicClient.waitForTransactionReceipt({ hash });
