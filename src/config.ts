@@ -28,8 +28,8 @@ export const addresses = {
 // Anvil fork. Redeploy and update these if the fork is restarted, since
 // Anvil resets all state (including deployed contracts) on restart.
 export const arbix = {
-  executor: "0x72C5CB4fb5ba4DF62Ca066FA41bd38AdBBe5D378" as `0x${string}`,
-  flashLoan: "0xA2bE5E5f0bC16AC57D5839Af3D52E206d7B38434" as `0x${string}`,
-  sushiAdapter: "0xa2FF6889026E0ae606d710A8405a6328adEDAF77" as `0x${string}`,
-  camelotAdapter: "0xC3f52D816A522848addE7d80b9f9Eda3344Cc874" as `0x${string}`,
+  executor: "0x26b0ba66e320fE2640C21713263a07D8173C3d4A" as `0x${string}`,
+  flashLoan: "0x43302BE64Cc6e022f4b0D009D97db9f98C396e75" as `0x${string}`,
+  sushiAdapter: "0xf6BD81896280A67FFeD41e6277dAE71BfA30bCE5" as `0x${string}`,
+  camelotAdapter: "0xB41a0d0FaFe1BEfD872c348A8d4fE3b56DB98B4b" as `0x${string}`,
 } as const;

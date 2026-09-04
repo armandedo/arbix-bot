@@ -45,11 +45,7 @@ function routerToAdapter(routerAddress: `0x${string}`): `0x${string}` {
   throw new Error(`No adapter mapped for router address: ${routerAddress}`);
 }
 
-export async function executeOpportunity(
-  signer: Signer,
-  opportunity: Opportunity,
-  slippageBps: bigint = 50n
-): Promise<`0x${string}`> {
+function buildCalldata(opportunity: Opportunity, slippageBps: bigint): `0x${string}` {
   const deadline = BigInt(Math.floor(Date.now() / 1000)) + DEADLINE_BUFFER_SECONDS;
   const deadlineData = encodeAbiParameters(parseAbiParameters("uint256"), [deadline]);
 
@@ -82,14 +78,54 @@ export async function executeOpportunity(
     data: encodedArbitrageParams,
   };
 
-  const calldata = encodeFunctionData({
+  return encodeFunctionData({
     abi: flashLoanAbi,
     functionName: "requestFlashLoan",
     args: [flashLoanParams],
   });
+}
+
+/**
+ * Thrown when the pre-submission simulation reverts. Distinguishes "the
+ * trade is no longer valid" (caught cheaply, no gas spent) from a real
+ * on-chain failure during actual submission, so callers can log/handle
+ * these differently.
+ */
+export class SimulationFailedError extends Error {
+  constructor(reason: string) {
+    super(`Simulation failed, refusing to submit: ${reason}`);
+    this.name = "SimulationFailedError";
+  }
+}
+
+export async function executeOpportunity(
+  signer: Signer,
+  opportunity: Opportunity,
+  slippageBps: bigint = 50n
+): Promise<`0x${string}`> {
+  const calldata = buildCalldata(opportunity, slippageBps);
+  const account = signer.walletClient.account!;
+
+  // Simulate via eth_call immediately before submitting. This costs no gas
+  // and catches the common case where pool state (or the opportunity's
+  // underlying assumption) has shifted since detection — e.g. another
+  // trade already closed the spread, or a competing searcher front-ran it
+  // in the same block window. Cheaper to catch here than to pay real gas
+  // for an on-chain revert.
+  try {
+    await publicClient.call({
+      account: account.address,
+      to: arbix.flashLoan,
+      data: calldata,
+      gas: EXECUTION_GAS_LIMIT,
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new SimulationFailedError(reason);
+  }
 
   const hash = await signer.walletClient.sendTransaction({
-    account: signer.walletClient.account!,
+    account,
     chain: signer.walletClient.chain,
     to: arbix.flashLoan,
     data: calldata,
